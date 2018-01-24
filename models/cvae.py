@@ -14,15 +14,15 @@ from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import rnn_cell_impl as rnn_cell
 from tensorflow.python.ops import variable_scope
 
-import decoder_fn_lib
-import utils
+import models.decoder_fn_lib as decoder_fn_lib
+import models.utils as utils
 from models.seq2seq import dynamic_rnn_decoder
-from utils import gaussian_kld
-from utils import get_bi_rnn_encode
-from utils import get_bow
-from utils import get_rnn_encode
-from utils import norm_log_liklihood
-from utils import sample_gaussian
+from models.utils import gaussian_kld
+from models.utils import get_bi_rnn_encode
+from models.utils import get_bow
+from models.utils import get_rnn_encode
+from models.utils import norm_log_liklihood
+from models.utils import sample_gaussian
 
 
 class BaseTFModel(object):
@@ -158,7 +158,7 @@ class KgRnnCVAE(BaseTFModel):
             self.global_t = tf.placeholder(dtype=tf.int32, name="global_t")
             self.use_prior = tf.placeholder(dtype=tf.bool, name="use_prior")
 
-        max_dialog_len = array_ops.shape(self.input_contexts)[1]
+        max_dialog_len = array_ops.shape(self.input_contexts)[1]#shape: Returns the shape of a tensor.
         max_out_len = array_ops.shape(self.output_tokens)[1]
         batch_size = array_ops.shape(self.input_contexts)[0]
 
@@ -170,14 +170,19 @@ class KgRnnCVAE(BaseTFModel):
             with variable_scope.variable_scope("dialogActEmbedding"):
                 d_embedding = tf.get_variable("embedding", [self.da_vocab_size, config.da_embed_size], dtype=tf.float32)
                 da_embedding = embedding_ops.embedding_lookup(d_embedding, self.output_das)
+                #about embedding_lookup: http://blog.csdn.net/u013041398/article/details/60955847
 
         with variable_scope.variable_scope("wordEmbedding"):
             self.embedding = tf.get_variable("embedding", [self.vocab_size, config.embed_size], dtype=tf.float32)
             embedding_mask = tf.constant([0 if i == 0 else 1 for i in range(self.vocab_size)], dtype=tf.float32,
-                                         shape=[self.vocab_size, 1])
+                                         shape=[self.vocab_size, 1]) #??????????????
             embedding = self.embedding * embedding_mask
+            #Whether or not the input value0 is a special "padding" value that should be masked out.
+            # This is useful for recurrent layers which may take variable length input.
+            #maybe need to be changed
 
-            input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
+
+            input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))# pass '[-1]' to flatten input_contexts
             input_embedding = tf.reshape(input_embedding, [-1, self.max_utt_len, config.embed_size])
             output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens)
 
@@ -227,11 +232,12 @@ class KgRnnCVAE(BaseTFModel):
             attribute_fc1 = layers.fully_connected(attribute_embedding, 30, activation_fn=tf.tanh, scope="attribute_fc1")
 
         cond_list = [topic_embedding, self.my_profile, self.ot_profile, enc_last_state]
-        cond_embedding = tf.concat(cond_list, 1)
+        cond_embedding = tf.concat(cond_list, 1)##context and some meta data, such as topic
 
+        #introduce a recognition network q(phi)(z|x, c, y) to approximate the true posterior distribution p(z|x, c, y)
         with variable_scope.variable_scope("recognitionNetwork"):
             if config.use_hcf:
-                recog_input = tf.concat([cond_embedding, output_embedding, attribute_fc1], 1)
+                recog_input = tf.concat([cond_embedding, output_embedding, attribute_fc1], 1)#c: cond, x: output, y: attribute
             else:
                 recog_input = tf.concat([cond_embedding, output_embedding], 1)
             self.recog_mulogvar = recog_mulogvar = layers.fully_connected(recog_input, config.latent_size * 2, activation_fn=None, scope="muvar")
@@ -239,7 +245,7 @@ class KgRnnCVAE(BaseTFModel):
 
         with variable_scope.variable_scope("priorNetwork"):
             # P(XYZ)=P(Z|X)P(X)P(Y|X,Z)
-            prior_fc1 = layers.fully_connected(cond_embedding, np.maximum(config.latent_size * 2, 100),
+            prior_fc1 = layers.fully_connected(cond_embedding, int(np.maximum(config.latent_size * 2, 100)),
                                                activation_fn=tf.tanh, scope="fc1")
             prior_mulogvar = layers.fully_connected(prior_fc1, config.latent_size * 2, activation_fn=None,
                                                     scope="muvar")
@@ -525,7 +531,7 @@ class KgRnnCVAE(BaseTFModel):
         avg_f1 = 2*(avg_prec_bleu*avg_recall_bleu) / (avg_prec_bleu+avg_recall_bleu+10e-12)
         report = "Avg recall BLEU %f, avg precision BLEU %f and F1 %f (only 1 reference response. Not final result)" \
                  % (avg_recall_bleu, avg_prec_bleu, avg_f1)
-        print report
+        print(report)
         dest.write(report + "\n")
         print("Done testing")
 

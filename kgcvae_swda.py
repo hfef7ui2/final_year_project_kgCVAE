@@ -41,7 +41,7 @@ def main():
     test_config.dec_keep_prob = 1.0
     test_config.batch_size = 1
 
-    #pp(config)
+    # pp(config)
     print(config)
 
     # get data set
